@@ -42,7 +42,7 @@ jobs:
           if [ ! -d ".git" ]; then
             git clone https://github.com/${{ github.repository }} .
           else
-            git pull origin main
+            git pull origin main 
           fi
 
           mkdir -p backend
