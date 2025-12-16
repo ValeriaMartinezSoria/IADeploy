@@ -1,4 +1,4 @@
-name: Deploy to EC2
+name: Deploy with Docker to EC2
 
 on:
   push:
@@ -10,10 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Configure SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           cat <<'EOF' > ~/.ssh/id_rsa
@@ -22,16 +22,18 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Test SSH connection
-        run: |
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH_OK"
-
-      - name: Deploy on EC2
+      - name: Deploy on EC2 using Docker
         run: |
           ssh -i ~/.ssh/id_rsa \
           ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'SSH'
           set -e
+
+          # Install Docker if missing
+          if ! command -v docker >/dev/null; then
+            sudo apt update
+            sudo apt install -y docker.io docker-compose-plugin
+            sudo usermod -aG docker ubuntu
+          fi
 
           APP_DIR=/home/ubuntu/ai-study-planner
           mkdir -p $APP_DIR
