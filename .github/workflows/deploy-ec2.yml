@@ -2,8 +2,7 @@ name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -11,47 +10,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure SSH
+      - name: Configure SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          cat <<'EOF' > ~/.ssh/id_rsa
+          ${{ secrets.EC2_SSH_KEY }}
+          EOF
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy application on EC2
+      - name: Test SSH connection
         run: |
-          ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" <<'SSH'
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} "echo SSH_OK"
+
+      - name: Deploy on EC2
+        run: |
+          ssh -i ~/.ssh/id_rsa \
+          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'SSH'
           set -e
 
-          # Install Docker if not present
-          if ! command -v docker >/dev/null 2>&1; then
-            sudo apt update
-            sudo apt install -y docker.io docker-compose-plugin
-            sudo usermod -aG docker $USER
-            newgrp docker
-          fi
-
-          # Project directory
           APP_DIR=/home/ubuntu/ai-study-planner
           mkdir -p $APP_DIR
           cd $APP_DIR
 
-          # Pull latest code
           if [ ! -d ".git" ]; then
             git clone https://github.com/${{ github.repository }} .
           else
             git pull origin main
           fi
 
-          # Create backend .env
+          mkdir -p backend
           cat > backend/.env <<EOF
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           EOF
 
-          # Deploy with Docker Compose
           docker compose down || true
           docker compose up -d --build
           SSH
