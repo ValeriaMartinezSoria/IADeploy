@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Study Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        background-color: #f3f4f6;
+      }
+      .chat-container {
+        max-width: 768px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      .message-bubble {
+        padding: 1rem;
+        border-radius: 1.5rem;
+        max-width: 80%;
+        margin-bottom: 1rem;
+      }
+      .user-message {
+        background-color: #3b82f6;
+        color: white;
+        align-self: flex-end;
+      }
+      .agent-message {
+        background-color: #e5e7eb;
+        color: #374151;
+        align-self: flex-start;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="chat-container">
+      <header class="bg-white shadow-sm p-4 text-center font-bold text-xl">
+        AI Study Planner
+      </header>
+
+      <main id="chat-history" class="flex-1 overflow-y-auto p-4">
+        <div class="message-bubble agent-message">
+          👋 Hello! I'm your AI Study Planner.  
+          What would you like to study today?
+        </div>
+      </main>
+
+      <footer class="bg-white p-4">
+        <div class="flex items-center">
+          <input
+            id="user-input"
+            type="text"
+            class="flex-1 p-3 border-2 border-gray-300 rounded-full"
+            placeholder="Type your message..."
+          />
+          <button
+            id="send-btn"
+            class="ml-4 px-6 py-3 bg-blue-500 text-white rounded-full"
+          >
+            Send
+          </button>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const chatHistory = document.getElementById("chat-history");
+      const userInput = document.getElementById("user-input");
+      const sendBtn = document.getElementById("send-btn");
+
+      function addMessage(sender, text) {
+        const msg = document.createElement("div");
+        msg.classList.add(
+          "message-bubble",
+          sender === "user" ? "user-message" : "agent-message"
+        );
+        msg.textContent = text;
+        chatHistory.appendChild(msg);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+      }
+
+      async function sendMessage() {
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        addMessage("user", message);
+        userInput.value = "";
+
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message }),
+        });
+
+        const data = await response.json();
+        addMessage("agent", data.response || "Error processing request");
+      }
+
+      sendBtn.addEventListener("click", sendMessage);
+      userInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") sendMessage();
+      });
+    </script>
+  </body>
+</html>

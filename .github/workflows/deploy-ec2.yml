@@ -1,0 +1,51 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_PATH: ${{ secrets.EC2_PATH }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Sync project to server
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '__pycache__' \
+            --exclude '*.pyc' \
+            ./ "$EC2_USER@$EC2_HOST:$EC2_PATH/"
+
+      - name: Write backend .env
+        if: ${{ secrets.BACKEND_ENV_FILE != '' }}
+        run: |
+          ssh "$EC2_USER@$EC2_HOST" "cat > $EC2_PATH/backend/.env" <<'EOF'
+          ${{ secrets.BACKEND_ENV_FILE }}
+          EOF
+
+      - name: Deploy with docker compose
+        run: |
+          ssh "$EC2_USER@$EC2_HOST" <<'SSH'
+          set -e
+          cd "$EC2_PATH"
+          docker compose pull || true
+          docker compose down
+          docker compose up -d --build
+          SSH
