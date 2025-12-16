@@ -4,19 +4,14 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      EC2_HOST: ${{ secrets.EC2_HOST }}
-      EC2_USER: ${{ secrets.EC2_USER }}
-      EC2_PATH: ${{ secrets.EC2_PATH }}
-      BACKEND_ENV_FILE: ${{ secrets.BACKEND_ENV_FILE }}
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Configure SSH
@@ -24,30 +19,39 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Sync project to server
+      - name: Deploy application on EC2
         run: |
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude '__pycache__' \
-            --exclude '*.pyc' \
-            ./ "$EC2_USER@$EC2_HOST:$EC2_PATH/"
+          ssh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" <<'SSH'
+          set -e
 
-      - name: Write backend .env
-        if: env.BACKEND_ENV_FILE != ''
-        run: |
-          ssh "$EC2_USER@$EC2_HOST" "cat > $EC2_PATH/backend/.env" <<'EOF'
-          $BACKEND_ENV_FILE
+          # Install Docker if not present
+          if ! command -v docker >/dev/null 2>&1; then
+            sudo apt update
+            sudo apt install -y docker.io docker-compose-plugin
+            sudo usermod -aG docker $USER
+            newgrp docker
+          fi
+
+          # Project directory
+          APP_DIR=/home/ubuntu/ai-study-planner
+          mkdir -p $APP_DIR
+          cd $APP_DIR
+
+          # Pull latest code
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/${{ github.repository }} .
+          else
+            git pull origin main
+          fi
+
+          # Create backend .env
+          cat > backend/.env <<EOF
+          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           EOF
 
-      - name: Deploy with docker compose
-        run: |
-          ssh "$EC2_USER@$EC2_HOST" <<'SSH'
-          set -e
-          cd "$EC2_PATH"
-          docker compose pull || true
-          docker compose down
+          # Deploy with Docker Compose
+          docker compose down || true
           docker compose up -d --build
           SSH
