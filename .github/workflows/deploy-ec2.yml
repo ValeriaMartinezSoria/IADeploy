@@ -28,6 +28,7 @@ jobs:
           if [ -z "$EC2_USER" ]; then echo "EC2_USER secret missing" >&2; exit 1; fi
           if [ -z "$EC2_SSH_KEY" ] && [ -z "$EC2_SSH_KEY_B64" ]; then echo "EC2_SSH_KEY or EC2_SSH_KEY_B64 secret missing" >&2; exit 1; fi
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           if [ -n "$EC2_SSH_KEY_B64" ]; then
             echo "$EC2_SSH_KEY_B64" | base64 -d > ~/.ssh/id_rsa
           else
