@@ -37,6 +37,8 @@ jobs:
             printf '\n' >> ~/.ssh/id_rsa
           fi
           chmod 600 ~/.ssh/id_rsa
+          echo "Using EC2 user: $EC2_USER"
+          echo "Key fingerprint:" && ssh-keygen -lf ~/.ssh/id_rsa || true
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy on EC2 using Docker
@@ -45,7 +47,7 @@ jobs:
           EC2_USER: ${{ secrets.EC2_USER }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          ssh -o StrictHostKeyChecking=yes -i ~/.ssh/id_rsa "$EC2_USER"@"$EC2_HOST" <<'SSH'
+          ssh -vvv -o StrictHostKeyChecking=yes -i ~/.ssh/id_rsa "$EC2_USER"@"$EC2_HOST" <<'SSH'
           set -e
 
           # Ensure git is installed
