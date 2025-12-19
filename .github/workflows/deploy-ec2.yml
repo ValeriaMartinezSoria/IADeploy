@@ -1,9 +1,13 @@
-name: Deploy with Docker to EC2
+name: Deploy to EC2 (Docker Compose)
 
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -14,42 +18,75 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          cat <<'EOF' > ~/.ssh/id_rsa
-          ${{ secrets.EC2_SSH_KEY }}
-          EOF
+          printf "%s" "$EC2_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
 
       - name: Deploy on EC2 using Docker
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          ssh -i ~/.ssh/id_rsa \
-          ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} <<'SSH'
+          ssh -o StrictHostKeyChecking=yes -i ~/.ssh/id_rsa "$EC2_USER"@"$EC2_HOST" <<'SSH'
           set -e
 
-          # Install Docker if missing
-          if ! command -v docker >/dev/null; then
-            sudo apt update
-            sudo apt install -y docker.io docker-compose-plugin
-            sudo usermod -aG docker ubuntu
+          # Ensure git is installed
+          if ! command -v git >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update -y || true
+              sudo apt-get install -y git || true
+            elif command -v dnf >/dev/null 2>&1; then
+              sudo dnf install -y git || true
+            elif command -v yum >/dev/null 2>&1; then
+              sudo yum install -y git || true
+            fi
           fi
 
-          APP_DIR=/home/ubuntu/ai-study-planner
-          mkdir -p $APP_DIR
-          cd $APP_DIR
+          # Install Docker/Compose if missing
+          if ! command -v docker >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+              sudo apt-get update -y
+              sudo apt-get install -y docker.io docker-compose-plugin
+            elif command -v dnf >/dev/null 2>&1; then
+              sudo dnf install -y docker docker-compose-plugin
+            elif command -v yum >/dev/null 2>&1; then
+              sudo yum install -y docker
+            fi
+            sudo systemctl enable docker || true
+            sudo systemctl start docker || true
+            sudo usermod -aG docker "$USER" || true
+          fi
+
+          APP_DIR="$HOME/ai-study-planner"
+          mkdir -p "$APP_DIR"
+          cd "$APP_DIR"
 
           if [ ! -d ".git" ]; then
-            git clone https://github.com/${{ github.repository }} .
+            git clone --depth=1 https://github.com/${{ github.repository }} .
           else
-            git pull origin main 
+            git fetch origin
+            git reset --hard origin/main
           fi
 
           mkdir -p backend
-          cat > backend/.env <<EOF
-          GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          EOF
+          cat > backend/.env <<ENVV
+          GEMINI_API_KEY=${GEMINI_API_KEY}
+          ENVV
 
-          docker compose down || true
-          docker compose up -d --build
+          # Prefer Docker Compose v2
+          if docker compose version >/dev/null 2>&1; then
+            sudo docker compose down || true
+            sudo docker compose up -d --build
+          else
+            sudo docker-compose down || true
+            sudo docker-compose up -d --build
+          fi
+
+          sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
           SSH
